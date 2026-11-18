@@ -1,0 +1,174 @@
+import os
+import sys
+import shutil
+from pathlib import Path
+from typing import List
+from pydantic import BaseModel
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+# Determine runtime execution state
+IS_FROZEN = getattr(sys, "frozen", False)
+if IS_FROZEN:
+    APP_DIR = Path(sys.executable).resolve().parent
+    BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
+else:
+    APP_DIR = BASE_DIR
+    BUNDLE_DIR = BASE_DIR
+
+# Determine portable mode
+IS_PORTABLE = (
+    os.getenv("FORENSICS_PORTABLE_MODE", "").lower() in ("true", "1", "yes")
+    or (APP_DIR / ".portable").exists()
+)
+
+# Load .env file if present (APP_DIR takes precedence, followed by BASE_DIR)
+for candidate_env in (APP_DIR / ".env", BASE_DIR / ".env"):
+    if candidate_env.exists():
+        for line in candidate_env.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                k, v = k.strip(), v.strip()
+                if k not in os.environ:
+                    os.environ[k] = v
+        break
+
+def _find_binary(name: str, fallback_candidates: List[Path]) -> str:
+    found = shutil.which(name)
+    if found:
+        return found
+    for c in fallback_candidates:
+        if c.is_file():
+            return str(c.resolve())
+    return ""
+
+def _resolve_data_root() -> Path:
+    if os.getenv("FORENSICS_DATA_DIR"):
+        return Path(os.environ["FORENSICS_DATA_DIR"])
+    if IS_PORTABLE:
+        return APP_DIR / "data"
+    if IS_FROZEN or os.getenv("ENVIRONMENT") == "production":
+        local_app_data = os.getenv("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))
+        return Path(local_app_data) / "ForensicsWorkbench"
+    return BASE_DIR / os.getenv("DATA_DIR", "analysis_workspace")
+
+_DATA_ROOT = _resolve_data_root()
+_IS_DEV_WORKSPACE = (not IS_FROZEN and not IS_PORTABLE and _DATA_ROOT == BASE_DIR / "analysis_workspace")
+
+class Settings(BaseModel):
+    APP_NAME: str = "APK Forensics & Threat Intelligence Workbench"
+    VERSION: str = "2.0.0"
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "production" if IS_FROZEN else "development")
+    IS_FROZEN: bool = IS_FROZEN
+    IS_PORTABLE: bool = IS_PORTABLE
+    HOST: str = os.getenv("HOST", "127.0.0.1")
+    PORT: int = int(os.getenv("PORT", "8000"))
+    
+    # Bundle & Directory Roots
+    APP_DIR: Path = APP_DIR
+    BUNDLE_DIR: Path = BUNDLE_DIR
+    DATA_ROOT: Path = _DATA_ROOT
+    BUNDLE_RULES_DIR: Path = BUNDLE_DIR / "rules"
+    BUNDLE_FRONTEND_DIST: Path = BUNDLE_DIR / "frontend" / "dist"
+    
+    # Workspace & Storage Paths
+    DATA_DIR: Path = _DATA_ROOT if _IS_DEV_WORKSPACE else (_DATA_ROOT / "evidence")
+    CHAT_ATTACHMENTS_DIR: Path = (_DATA_ROOT / "chat_attachments") if _IS_DEV_WORKSPACE else (_DATA_ROOT / "attachments")
+    REPORTS_DIR: Path = (BASE_DIR / os.getenv("REPORTS_DIR", "reports")) if _IS_DEV_WORKSPACE else (_DATA_ROOT / "reports")
+    RULES_DIR: Path = (BASE_DIR / os.getenv("RULES_DIR", "rules")) if _IS_DEV_WORKSPACE else (_DATA_ROOT / "rules")
+    DB_PATH: Path = (BASE_DIR / os.getenv("DB_PATH", "analysis_workspace/workbench.db")) if _IS_DEV_WORKSPACE else (_DATA_ROOT / "workbench.db")
+    
+    # Tool Binaries with dynamic fallback resolution
+    JADX_PATH: str = os.getenv(
+        "JADX_PATH",
+        _find_binary("jadx.bat", [
+            Path.home() / "Tools" / "bin" / "jadx.bat",
+            Path.home() / "Tools" / "jadx" / "bin" / "jadx.bat",
+            Path(os.environ.get("ProgramFiles", "C:\\Program Files")) / "jadx" / "bin" / "jadx.bat",
+            _DATA_ROOT / "tools" / "jadx" / "bin" / "jadx.bat"
+        ])
+    )
+    JADX_GUI_PATH: str = os.getenv(
+        "JADX_GUI_PATH",
+        _find_binary("jadx-gui.bat", [
+            Path.home() / "Tools" / "bin" / "jadx-gui.bat",
+            Path.home() / "Tools" / "jadx" / "bin" / "jadx-gui.bat",
+            Path(os.environ.get("ProgramFiles", "C:\\Program Files")) / "jadx" / "bin" / "jadx-gui.bat",
+            _DATA_ROOT / "tools" / "jadx" / "bin" / "jadx-gui.bat"
+        ])
+    )
+    APKTOOL_PATH: str = os.getenv(
+        "APKTOOL_PATH",
+        _find_binary("apktool.bat", [
+            Path.home() / "Tools" / "bin" / "apktool.bat",
+            Path.home() / "Tools" / "apktool" / "apktool.bat",
+            _DATA_ROOT / "tools" / "apktool" / "apktool.bat"
+        ])
+    )
+    YARA_PATH: str = os.getenv("YARA_PATH", "")
+    OPENCODE_PATH: str = os.getenv("OPENCODE_PATH", "opencode.cmd")
+    
+    # MobSF integration (Suggested default port 8001 to avoid port 8000 conflict with FastAPI backend)
+    MOBSF_URL: str = os.getenv("MOBSF_URL", "")
+    MOBSF_API_KEY: str = os.getenv("MOBSF_API_KEY", "")
+    
+    # Threat Intelligence & OSINT APIs
+    VIRUSTOTAL_API_KEY: str = os.getenv("VIRUSTOTAL_API_KEY", "")
+    ABUSEIPDB_API_KEY: str = os.getenv("ABUSEIPDB_API_KEY", "")
+    ALIENVAULT_OTX_API_KEY: str = os.getenv("OTX_API_KEY", os.getenv("ALIENVAULT_OTX_API_KEY", ""))
+    URLHAUS_API_KEY: str = os.getenv("URLHAUS_API_KEY", "")
+    MALWAREBAZAAR_API_KEY: str = os.getenv("MALWAREBAZAAR_API_KEY", "")
+    IPINFO_API_KEY: str = os.getenv("IPINFO_API_KEY", "")
+    SHODAN_API_KEY: str = os.getenv("SHODAN_API_KEY", "")
+    CENSYS_API_ID: str = os.getenv("CENSYS_API_ID", "")
+    CENSYS_API_SECRET: str = os.getenv("CENSYS_API_SECRET", "")
+    GREYNOISE_API_KEY: str = os.getenv("GREYNOISE_API_KEY", "")
+    MISP_URL: str = os.getenv("MISP_URL", "")
+    MISP_API_KEY: str = os.getenv("MISP_API_KEY", "")
+
+    # Dynamic Sandbox & Simulation Tools
+    CAPE_URL: str = os.getenv("CAPE_URL", "")
+    CAPE_API_KEY: str = os.getenv("CAPE_API_KEY", "")
+    FAKENET_PATH: str = os.getenv("FAKENET_PATH", "")
+    INETSIM_PATH: str = os.getenv("INETSIM_PATH", "")
+    TSHARK_PATH: str = os.getenv(
+        "TSHARK_PATH",
+        _find_binary("tshark.exe", [
+            Path(os.environ.get("ProgramFiles", "C:\\Program Files")) / "Wireshark" / "tshark.exe",
+            Path(os.environ.get("ProgramFiles(x86)", "C:\\Program Files (x86)")) / "Wireshark" / "tshark.exe"
+        ])
+    )
+    ZEEK_PATH: str = os.getenv("ZEEK_PATH", "")
+    SURICATA_PATH: str = os.getenv("SURICATA_PATH", "")
+    
+    # Safe Mode Policies
+    LOCAL_ONLY_MODE: bool = os.getenv("LOCAL_ONLY_MODE", "false").lower() in ("true", "1", "yes")
+    MAX_UPLOAD_SIZE_MB: int = int(os.getenv("MAX_UPLOAD_SIZE_MB", "150"))
+    TOOL_TIMEOUT_SECONDS: int = int(os.getenv("TOOL_TIMEOUT_SECONDS", "180"))
+    
+    # CORS
+    CORS_ORIGINS: List[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000"
+    ]
+
+settings = Settings()
+
+# Ensure directories exist
+settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
+settings.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+settings.RULES_DIR.mkdir(parents=True, exist_ok=True)
+settings.CHAT_ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
+settings.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+# Initialize production rules from bundle if missing in isolated user data dir
+default_yara = settings.BUNDLE_RULES_DIR / "yara_rules.yar"
+target_yara = settings.RULES_DIR / "yara_rules.yar"
+if default_yara.is_file() and not target_yara.is_file():
+    try:
+        shutil.copy2(default_yara, target_yara)
+    except Exception:
+        pass

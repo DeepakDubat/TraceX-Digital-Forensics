@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 160" width="100%" height="100%">
+  <defs>
+    <linearGradient id="logoShieldBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#070C18" />
+    </linearGradient>
+    <linearGradient id="logoBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F0FF" />
+      <stop offset="100%" stop-color="#0284C7" />
+    </linearGradient>
+    <linearGradient id="beamGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F0FF" />
+      <stop offset="100%" stop-color="#0284C7" />
+    </linearGradient>
+  </defs>
+
+  <!-- Embedded Icon Left -->
+  <g transform="translate(10, 10) scale(0.273)">
+    <path d="M 256,36 L 444,116 C 444,288 356,416 256,476 C 156,416 68,288 68,116 Z"
+          fill="url(#logoShieldBg)"
+          stroke="url(#logoBorder)"
+          stroke-width="14"
+          stroke-linejoin="round" />
+    <line x1="110" y1="256" x2="402" y2="256" stroke="#00F0FF" stroke-width="3" stroke-opacity="0.4" />
+    <line x1="256" y1="120" x2="256" y2="392" stroke="#00F0FF" stroke-width="2" stroke-opacity="0.4" stroke-dasharray="6 4" />
+    <path d="M 164,164 L 348,348" stroke="url(#beamGrad)" stroke-width="32" stroke-linecap="round" />
+    <path d="M 348,164 L 164,348" stroke="url(#beamGrad)" stroke-width="32" stroke-linecap="round" />
+    <path d="M 180,180 L 332,332" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" />
+    <path d="M 332,180 L 180,332" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" />
+    <polygon points="256,224 288,256 256,288 224,256" fill="#070C18" stroke="#00F0FF" stroke-width="8" />
+    <circle cx="256" cy="256" r="7" fill="#FFFFFF" />
+  </g>
+
+  <!-- Brand Typography -->
+  <text x="165" y="86" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="58" font-weight="900" fill="#FFFFFF" letter-spacing="1">Trace<tspan fill="#00E5FF">X</tspan></text>
+
+  <!-- Forensics Pill Badge -->
+  <rect x="380" y="48" width="112" height="26" rx="6" fill="#0369A1" fill-opacity="0.3" stroke="#0284C7" stroke-width="1.5" />
+  <text x="436" y="66" font-family="Segoe UI, Inter, monospace" font-size="12" font-weight="800" fill="#38BDF8" text-anchor="middle" letter-spacing="1.5">FORENSICS</text>
+
+  <!-- Tagline: Discover. Analyze. Investigate. -->
+  <text x="168" y="122" font-family="Segoe UI, Inter, monospace" font-size="14.5" font-weight="600" fill="#94A3B8" letter-spacing="2.5">DISCOVER • ANALYZE • INVESTIGATE</text>
+</svg>

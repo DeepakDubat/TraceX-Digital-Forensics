@@ -1,0 +1,4 @@
+# TraceX offline tool-validation rule.
+# Harmless synthetic marker used only for validating offline Suricata PCAP analysis.
+# It does not perform live capture, blocking, or active scanning.
+alert udp any any -> any 53 (msg:"TRACEX SYNTHETIC raw DNS bytes"; content:"tracex-test"; nocase; sid:900011; rev:1;)

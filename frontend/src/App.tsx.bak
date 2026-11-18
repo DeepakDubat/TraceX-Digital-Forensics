@@ -1,0 +1,261 @@
+import React, { useState, useEffect } from 'react';
+import { Navbar } from './components/Navbar';
+import { Sidebar, PageId } from './components/Sidebar';
+import { DashboardPage } from './pages/DashboardPage';
+import { NewInvestigationPage } from './pages/NewInvestigationPage';
+import { AnalysisProgressPage } from './pages/AnalysisProgressPage';
+import { StaticAnalysisPage } from './pages/StaticAnalysisPage';
+import { C2IntelligencePage } from './pages/C2IntelligencePage';
+import { TokenSecretsPage } from './pages/TokenSecretsPage';
+import { ReverseShellPage } from './pages/ReverseShellPage';
+import { ThreatIntelPage } from './pages/ThreatIntelPage';
+import { EvidenceGraphPage } from './pages/EvidenceGraphPage';
+import { HistoryPage } from './pages/HistoryPage';
+import { ToolConfigPage } from './pages/ToolConfigPage';
+import { ReportViewerPage } from './pages/ReportViewerPage';
+import { OpenCodeChatPage } from './pages/OpenCodeChatPage';
+import { OSINTInvestigationPage } from './pages/OSINTInvestigationPage';
+import { AuthorizedNetworkValidationPage } from './pages/AuthorizedNetworkValidationPage';
+import { DynamicSandboxPage } from './pages/DynamicSandboxPage';
+import { CorrelationRiskPage } from './pages/CorrelationRiskPage';
+import { api } from './api';
+import { DashboardStats, InvestigationDetail } from './types';
+
+export const App: React.FC = () => {
+  const [currentPage, setCurrentPage] = useState<PageId>('dashboard');
+  const [currentInvestigationId, setCurrentInvestigationId] = useState<string | null>(null);
+  const [currentDetail, setCurrentDetail] = useState<InvestigationDetail | null>(null);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  // Sidebar collapse state (desktop)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('forensics_sidebar_collapsed') === 'true';
+  });
+
+  // Mobile sidebar drawer state
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  // Toggle desktop sidebar collapse
+  const handleToggleSidebar = () => {
+    // If on small screen, toggle mobile drawer
+    if (window.innerWidth < 1024) {
+      setMobileSidebarOpen(!mobileSidebarOpen);
+    } else {
+      setSidebarCollapsed((prev) => {
+        const next = !prev;
+        localStorage.setItem('forensics_sidebar_collapsed', String(next));
+        return next;
+      });
+    }
+  };
+
+  // Close mobile drawer on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && mobileSidebarOpen) {
+        setMobileSidebarOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [mobileSidebarOpen]);
+
+  // Load stats
+  const refreshStats = async () => {
+    try {
+      const data = await api.getDashboardStats();
+      setStats(data);
+    } catch (err) {
+      console.error('Failed to load stats', err);
+    } finally {
+      setStatsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshStats();
+    const interval = setInterval(refreshStats, 8000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // When an investigation is selected, load its full details
+  const selectInvestigation = async (id: string, targetPage: PageId = 'static_findings') => {
+    setCurrentInvestigationId(id);
+    try {
+      const detail = await api.getInvestigationDetail(id);
+      setCurrentDetail(detail);
+      if (detail.record.status === 'analyzing') {
+        setCurrentPage('progress');
+      } else {
+        setCurrentPage(targetPage);
+      }
+    } catch (err) {
+      console.error(err);
+      setCurrentPage('dashboard');
+    }
+  };
+
+  // Investigation created callback
+  const handleInvestigationCreated = (id: string) => {
+    setCurrentInvestigationId(id);
+    selectInvestigation(id, 'progress');
+    refreshStats();
+  };
+
+  const handleAnalysisCompleted = async () => {
+    if (currentInvestigationId) {
+      try {
+        const detail = await api.getInvestigationDetail(currentInvestigationId);
+        setCurrentDetail(detail);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+    refreshStats();
+  };
+
+  return (
+    <div className="h-screen w-screen overflow-hidden flex flex-row bg-app text-app-primary font-sans selection:bg-cyan-500/20 selection:text-cyan-800 dark:selection:text-cyan-200">
+      {/* Desktop Fixed Sidebar */}
+      <div className="hidden lg:flex flex-shrink-0 z-30">
+        <Sidebar
+          currentPage={currentPage}
+          onSelectPage={setCurrentPage}
+          hasActiveTarget={Boolean(currentDetail)}
+          reverseShellDetected={currentDetail?.record?.reverse_shell_detected}
+          c2Count={currentDetail?.c2_indicators?.length || 0}
+          secretCount={currentDetail?.secrets?.length || 0}
+          fileType={currentDetail?.record?.file_type}
+          persistenceCount={currentDetail?.persistence_findings?.length || 0}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={handleToggleSidebar}
+        />
+      </div>
+
+      {/* Mobile Off-canvas Drawer */}
+      {mobileSidebarOpen && (
+        <div className="fixed inset-0 z-50 flex lg:hidden">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
+            onClick={() => setMobileSidebarOpen(false)}
+            aria-hidden="true"
+          />
+
+          {/* Drawer content */}
+          <div className="relative z-10 flex">
+            <Sidebar
+              currentPage={currentPage}
+              onSelectPage={setCurrentPage}
+              hasActiveTarget={Boolean(currentDetail)}
+              reverseShellDetected={currentDetail?.record?.reverse_shell_detected}
+              c2Count={currentDetail?.c2_indicators?.length || 0}
+              secretCount={currentDetail?.secrets?.length || 0}
+              fileType={currentDetail?.record?.file_type}
+              persistenceCount={currentDetail?.persistence_findings?.length || 0}
+              isMobile={true}
+              onCloseMobile={() => setMobileSidebarOpen(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Main Application Area */}
+      <div className="flex-1 h-screen flex flex-col overflow-hidden min-w-0">
+        {/* Fixed Topbar Header */}
+        <Navbar
+          currentInvestigation={currentDetail?.record}
+          activeJobsCount={stats?.active_running_tasks || 0}
+          localOnlyMode={Boolean(currentDetail?.record?.local_only_mode)}
+          onRefresh={refreshStats}
+          onNavigateNew={() => setCurrentPage('new_investigation')}
+          onToggleSidebar={handleToggleSidebar}
+          sidebarCollapsed={sidebarCollapsed}
+        />
+
+        {/* Scrollable Page Content */}
+        <main className="flex-1 overflow-y-auto overflow-x-hidden bg-app relative">
+          {currentPage === 'dashboard' && (
+            <DashboardPage
+              stats={stats}
+              loading={statsLoading}
+              onSelectInvestigation={(id) => selectInvestigation(id, 'static_findings')}
+              onNavigateNew={() => setCurrentPage('new_investigation')}
+            />
+          )}
+
+          {currentPage === 'new_investigation' && (
+            <NewInvestigationPage onInvestigationCreated={handleInvestigationCreated} />
+          )}
+
+          {currentPage === 'osint_pivot' && (
+            <OSINTInvestigationPage
+              currentDetail={currentDetail}
+              onSelectInvestigation={(id) => selectInvestigation(id, 'osint_pivot')}
+            />
+          )}
+
+          {currentPage === 'progress' && currentInvestigationId && (
+            <AnalysisProgressPage
+              investigationId={currentInvestigationId}
+              onAnalysisCompleted={handleAnalysisCompleted}
+              onViewReport={() => setCurrentPage('report_viewer')}
+            />
+          )}
+
+          {currentPage === 'static_findings' && currentDetail && (
+            <StaticAnalysisPage detail={currentDetail} />
+          )}
+
+          {currentPage === 'c2_intel' && currentDetail && (
+            <C2IntelligencePage detail={currentDetail} />
+          )}
+
+          {currentPage === 'secrets' && currentDetail && (
+            <TokenSecretsPage detail={currentDetail} />
+          )}
+
+          {currentPage === 'reverse_shell' && currentDetail && (
+            <ReverseShellPage detail={currentDetail} />
+          )}
+
+          {currentPage === 'threat_intel' && currentDetail && (
+            <ThreatIntelPage detail={currentDetail} />
+          )}
+
+          {currentPage === 'network_validation' && currentDetail && (
+            <AuthorizedNetworkValidationPage detail={currentDetail} />
+          )}
+
+          {currentPage === 'dynamic_sandbox' && currentDetail && (
+            <DynamicSandboxPage detail={currentDetail} />
+          )}
+
+          {currentPage === 'correlation_risk' && currentDetail && (
+            <CorrelationRiskPage detail={currentDetail} />
+          )}
+
+          {currentPage === 'evidence_graph' && currentDetail && (
+            <EvidenceGraphPage detail={currentDetail} />
+          )}
+
+          {currentPage === 'opencode_chat' && <OpenCodeChatPage />}
+
+          {currentPage === 'history' && (
+            <HistoryPage onSelectInvestigation={(id) => selectInvestigation(id, 'static_findings')} />
+          )}
+
+          {currentPage === 'tool_config' && <ToolConfigPage />}
+
+          {currentPage === 'report_viewer' && currentDetail && (
+            <ReportViewerPage detail={currentDetail} />
+          )}
+        </main>
+      </div>
+    </div>
+  );
+};
+
+export default App;
+

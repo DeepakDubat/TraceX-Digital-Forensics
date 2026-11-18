@@ -1,0 +1,371 @@
+import uuid
+import tempfile
+import shutil
+from pathlib import Path
+from datetime import datetime
+from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Query, Response, Depends
+from fastapi.responses import HTMLResponse, PlainTextResponse
+
+from backend.app.config import settings
+from backend.app.core.storage import workspace_mgr
+from backend.app.core.models import (
+    InvestigationRecord, EvidenceItem, UniversalInvestigationDetail
+)
+from backend.app.core.security import sanitize_filename, safe_copy_upload, verify_api_access
+from backend.app.database.repository import repo
+from backend.app.core.universal_orchestrator import run_universal_pipeline
+from backend.app.analyzers.universal.file_identifier import (
+    identify_file_format, calculate_streaming_hashes, calculate_shannon_entropy
+)
+from backend.app.analyzers.universal.integrity_ledger import (
+    record_custody_event, verify_ledger_integrity
+)
+from backend.app.reporting.master_report_generator import (
+    generate_master_txt_report, generate_master_html_report,
+    export_evidence_inventory_csv, export_findings_csv, export_reproducibility_bundle_zip
+)
+from backend.app.core.user_auth import get_current_user
+
+router = APIRouter(prefix="/api/universal", tags=["Universal Digital Forensics"])
+
+@router.post("/investigations/upload")
+async def multi_evidence_upload(
+    background_tasks: BackgroundTasks,
+    files: List[UploadFile] = File(...),
+    case_reference: Optional[str] = Form(None),
+    investigator_name: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    analyst_notes: Optional[str] = Form(None),
+    source_info: Optional[str] = Form(None),
+    local_only_mode: bool = Form(False),
+    ai_assisted_analysis: bool = Form(False),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Universal Multi-Evidence Ingestion:
+    - Accepts 1 to 50 evidence files in a single unified case
+    - Computes streaming hashes (SHA-256, SHA-512, MD5, SHA-1)
+    - Detects true file format via magic bytes and identifies masquerading
+    - Stages original read-only evidence and isolated working copies
+    - Logs verifiable Chain-of-Custody acquisition records
+    - Dispatches background multi-evidence forensic analysis
+    """
+    if not files or len(files) == 0:
+        raise HTTPException(status_code=400, detail="No files provided for forensic intake.")
+
+    inv_id = f"INV-{datetime.utcnow().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+    dirs = workspace_mgr.create_workspace(inv_id)
+    examiner = investigator_name or current_user.get("username", "Examiner")
+
+    staged_items: List[EvidenceItem] = []
+    primary_filename = files[0].filename or "evidence_package"
+
+    # Pre-create root investigation so foreign key constraints on evidence_items and custody succeed
+    rec = InvestigationRecord(
+        id=inv_id,
+        filename=primary_filename,
+        original_size=0,
+        md5="0"*32,
+        sha1="0"*40,
+        sha256="0"*64,
+        case_reference=case_reference,
+        investigator_name=investigator_name,
+        description=description,
+        analyst_notes=analyst_notes,
+        local_only_mode=local_only_mode or settings.LOCAL_ONLY_MODE,
+        status="pending",
+        progress=0,
+        current_stage=f"Staging {len(files)} evidence artifacts...",
+        file_type="multi" if len(files) > 1 else "generic",
+        ai_assisted_analysis=ai_assisted_analysis
+    )
+    repo.create_investigation(rec)
+
+    for idx, f in enumerate(files):
+        if not f.filename:
+            continue
+        safe_name = sanitize_filename(f.filename)
+        # Stage in temporary file with size ceiling protection
+        upload_error = None
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+            try:
+                max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+                safe_copy_upload(f.file, tmp, max_bytes=max_bytes)
+            except ValueError as e:
+                upload_error = (413, str(e))
+            except (IOError, OSError) as e:
+                upload_error = (507, f"Insufficient disk space or storage error: {str(e)}")
+            except Exception as e:
+                upload_error = (500, f"Upload processing failure: {str(e)}")
+            finally:
+                f.file.close()
+
+        if upload_error:
+            tmp_path.unlink(missing_ok=True)
+            err_status, err_detail = upload_error
+            raise HTTPException(status_code=err_status, detail=err_detail)
+
+        try:
+            size_bytes = tmp_path.stat().st_size
+            if size_bytes > settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024:
+                tmp_path.unlink(missing_ok=True)
+                raise HTTPException(status_code=413, detail=f"File '{f.filename}' exceeds maximum allowed limit of {settings.MAX_UPLOAD_SIZE_MB} MB.")
+
+            # Stream hashes
+            hashes = calculate_streaming_hashes(tmp_path)
+            entropy, _ = calculate_shannon_entropy(tmp_path)
+            triage = identify_file_format(tmp_path, safe_name)
+
+            # Stage in isolated workspace
+            orig_dest = dirs["original"] / safe_name
+            work_dest = dirs["working"] / safe_name
+            shutil.copy2(tmp_path, orig_dest)
+            shutil.copy2(tmp_path, work_dest)
+
+            # Mark original write-protected (read-only)
+            try:
+                os.chmod(orig_dest, 0o444)
+            except Exception:
+                pass
+
+            ev_id = f"EVD-{inv_id[-6:]}-{idx+1:03d}"
+            ev_item = EvidenceItem(
+                id=ev_id,
+                investigation_id=inv_id,
+                filename=safe_name,
+                file_size=size_bytes,
+                mime_type=triage["mime_type"],
+                detected_format=triage["detected_format"],
+                extension=triage["extension"],
+                format_mismatch=triage["format_mismatch"],
+                md5=hashes["md5"],
+                sha1=hashes["sha1"],
+                sha256=hashes["sha256"],
+                sha512=hashes["sha512"],
+                working_copy_sha256=hashes["sha256"],
+                integrity_status="VERIFIED",
+                source_info=source_info or "Examiner Ingestion",
+                examiner_notes=analyst_notes,
+                acquired_at=datetime.utcnow(),
+                processing_state=triage["processing_state"],
+                entropy=entropy,
+                triage_summary=triage,
+                metadata={},
+                created_at=datetime.utcnow()
+            )
+            repo.create_evidence_item(ev_item)
+            staged_items.append(ev_item)
+
+            # Record Chain of Custody Event
+            record_custody_event(
+                investigation_id=inv_id,
+                event_type="EVIDENCE_RECEIVED",
+                examiner=examiner,
+                evidence_id=ev_id,
+                original_hash=hashes["sha256"],
+                working_copy_hash=hashes["sha256"],
+                verification_result="PASSED",
+                details={
+                    "filename": safe_name,
+                    "size_bytes": size_bytes,
+                    "format": triage["detected_format"],
+                    "source": source_info or "Direct Upload"
+                }
+            )
+
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
+    if not staged_items:
+        raise HTTPException(status_code=400, detail="No valid evidence files could be staged.")
+
+    # Update root case investigation record with totals
+    first_ev = staged_items[0]
+    rec.filename = primary_filename if len(staged_items) == 1 else f"Multi-Evidence Case ({len(staged_items)} files)"
+    rec.original_size = sum(e.file_size for e in staged_items)
+    rec.md5 = first_ev.md5 or ""
+    rec.sha1 = first_ev.sha1 or ""
+    rec.sha256 = first_ev.sha256
+    rec.current_stage = f"Staged {len(staged_items)} evidence files. Queued for universal pipeline."
+    rec.file_type = first_ev.detected_format if len(staged_items) == 1 else "multi"
+    repo.update_investigation(rec)
+
+    # Launch background forensic analysis
+    background_tasks.add_task(run_universal_pipeline, inv_id)
+
+    return {
+        "status": "success",
+        "investigation_id": inv_id,
+        "case_reference": case_reference,
+        "total_staged_files": len(staged_items),
+        "evidence_items": [
+            {
+                "id": e.id,
+                "filename": e.filename,
+                "detected_format": e.detected_format,
+                "size_bytes": e.file_size,
+                "sha256": e.sha256,
+                "format_mismatch": e.format_mismatch
+            }
+            for e in staged_items
+        ]
+    }
+
+@router.get("/investigations/{investigation_id}", response_model=UniversalInvestigationDetail)
+@router.get("/investigations/{investigation_id}/detail", response_model=UniversalInvestigationDetail)
+def get_universal_investigation(
+    investigation_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Retrieves full universal investigation details across all evidence items."""
+    detail = repo.get_universal_investigation_detail(investigation_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Investigation record not found.")
+    return detail
+
+@router.get("/investigations/{investigation_id}/evidence")
+def list_evidence(
+    investigation_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Lists all evidence items associated with this case."""
+    items = repo.list_evidence_items(investigation_id)
+    return items
+
+@router.get("/investigations/{investigation_id}/artifacts")
+def list_artifacts(
+    investigation_id: str,
+    evidence_id: Optional[str] = Query(None),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Lists structured extracted artifacts (URLs, IPs, emails, hashes, etc.)."""
+    return repo.list_extracted_artifacts(investigation_id, evidence_id)
+
+@router.get("/investigations/{investigation_id}/relationships")
+def list_relationships(
+    investigation_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Lists cross-file evidence correlations."""
+    return repo.list_evidence_relationships(investigation_id)
+
+@router.get("/investigations/{investigation_id}/timeline")
+def list_timeline(
+    investigation_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Lists normalized UTC chronological timeline events."""
+    return repo.list_timeline_events(investigation_id)
+
+@router.get("/investigations/{investigation_id}/chain-of-custody")
+def get_chain_of_custody_ledger(
+    investigation_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Lists immutable chain-of-custody events and cryptographic integrity verification."""
+    events = repo.list_chain_of_custody(investigation_id)
+    integrity = verify_ledger_integrity(investigation_id)
+    return {
+        "investigation_id": investigation_id,
+        "integrity_audit": integrity,
+        "events": events
+    }
+
+@router.get("/investigations/{investigation_id}/findings-register")
+def list_findings(
+    investigation_id: str,
+    evidence_id: Optional[str] = Query(None),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Lists evidence-backed findings."""
+    return repo.list_findings_register(investigation_id, evidence_id)
+
+@router.patch("/investigations/{investigation_id}/findings/{finding_id}/verify")
+def update_finding_status(
+    investigation_id: str,
+    finding_id: str,
+    verification_state: str = Form(...), # verified, rejected, needs_more_evidence, pending_review
+    analyst_notes: Optional[str] = Form(None),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Analyst review workflow: updates verification state of a specific forensic finding."""
+    if verification_state not in ("verified", "rejected", "needs_more_evidence", "pending_review"):
+        raise HTTPException(status_code=400, detail="Invalid verification state.")
+
+    success = repo.update_finding_verification(finding_id, verification_state, analyst_notes)
+    if not success:
+        raise HTTPException(status_code=404, detail="Finding not found.")
+    return {"status": "success", "finding_id": finding_id, "verification_state": verification_state}
+
+@router.get("/investigations/{investigation_id}/report/master/txt", response_class=PlainTextResponse)
+def download_master_txt_report(
+    investigation_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Generates and serves downloadable 31-section Master Forensic Report in plain-text."""
+    detail = repo.get_universal_investigation_detail(investigation_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Investigation record not found.")
+
+    txt = generate_master_txt_report(detail)
+    filename = f"Master_Forensic_Report_{investigation_id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.txt"
+    return Response(
+        content=txt,
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename=\"{filename}\""}
+    )
+
+@router.get("/investigations/{investigation_id}/report/master/html", response_class=HTMLResponse)
+def view_master_html_report(
+    investigation_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Serves interactive, print-ready HTML Master Forensic Report."""
+    detail = repo.get_universal_investigation_detail(investigation_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Investigation record not found.")
+    return generate_master_html_report(detail)
+
+@router.get("/investigations/{investigation_id}/report/bundle")
+def download_reproducibility_bundle(
+    investigation_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Serves forensic reproducibility bundle ZIP containing reports, manifests, and CSVs."""
+    detail = repo.get_universal_investigation_detail(investigation_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Investigation record not found.")
+
+    zip_bytes = export_reproducibility_bundle_zip(detail)
+    filename = f"Forensic_Bundle_{investigation_id}.zip"
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=\"{filename}\""}
+    )
+
+@router.get("/search/cross-case")
+def search_cross_case(
+    query_type: str = Query("hash"), # hash or indicator
+    value: str = Query(...),
+    current_investigation_id: Optional[str] = Query(None),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Searches across historical investigations to identify cross-case duplicate evidence or shared IOCs.
+    """
+    if query_type == "hash":
+        return repo.search_cross_case_hashes(value.strip().lower(), current_investigation_id)
+    else:
+        return repo.search_cross_case_indicators(value.strip().lower())
+
+@router.get("/cross-case-search")
+def cross_case_search(
+    query: str = Query(..., min_length=2),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Unified cross-case duplicate & indicator search across all past investigations."""
+    return repo.search_cross_case_indicators(query)
+

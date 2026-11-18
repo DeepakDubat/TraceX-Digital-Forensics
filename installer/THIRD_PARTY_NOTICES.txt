@@ -1,0 +1,93 @@
+================================================================================
+           UNIVERSAL FORENSICS WORKBENCH — THIRD-PARTY NOTICES
+================================================================================
+
+This application redistributes and bundles open-source software components under
+various permissive licenses. Below is the software inventory, copyright notices,
+and applicable licenses.
+
+--------------------------------------------------------------------------------
+1. Python Runtime & Core Standard Libraries
+--------------------------------------------------------------------------------
+License: Python Software Foundation License Version 2
+Copyright (c) 2001-2026 Python Software Foundation. All rights reserved.
+Redistributed as bundled Python 3.11 executable runtime.
+
+--------------------------------------------------------------------------------
+2. FastAPI & Starlette
+--------------------------------------------------------------------------------
+License: MIT License
+Copyright (c) 2018-2026 Sebastián Ramírez (FastAPI)
+Copyright (c) 2018-2026 Encode OSS Ltd (Starlette)
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction.
+
+--------------------------------------------------------------------------------
+3. Uvicorn
+--------------------------------------------------------------------------------
+License: BSD 3-Clause License
+Copyright (c) 2017-present, Encode OSS Ltd. All rights reserved.
+
+--------------------------------------------------------------------------------
+4. Androguard
+--------------------------------------------------------------------------------
+License: Apache License, Version 2.0
+Copyright (c) 2012-2026 Anthony Desnos and the Androguard contributors.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at:
+    http://www.apache.org/licenses/LICENSE-2.0
+
+--------------------------------------------------------------------------------
+5. YARA & yara-python
+--------------------------------------------------------------------------------
+License: BSD 3-Clause License / Apache License 2.0
+Copyright (c) 2007-2026 Victor M. Alvarez [VirusTotal]
+All rights reserved.
+
+--------------------------------------------------------------------------------
+6. PEFile
+--------------------------------------------------------------------------------
+License: MIT License
+Copyright (c) 2004-2026 Ero Carrera <ero.carrera@gmail.com>
+
+--------------------------------------------------------------------------------
+7. PyPDF
+--------------------------------------------------------------------------------
+License: BSD 3-Clause License
+Copyright (c) 2006-2008, Mathieu Fenniak
+Copyright (c) 2022-2026, Martin Thoma
+
+--------------------------------------------------------------------------------
+8. Pillow (PIL Fork)
+--------------------------------------------------------------------------------
+License: HPND License (Historical Permission Notice and Disclaimer)
+Copyright (c) 1997-2011 by Secret Labs AB
+Copyright (c) 1995-2011 by Fredrik Lundh
+Copyright (c) 2010-2026 by Jeffrey A. Clark (Alex) and contributors.
+
+--------------------------------------------------------------------------------
+9. python-docx & openpyxl
+--------------------------------------------------------------------------------
+python-docx: MIT License, Copyright (c) 2013 Steve Canny
+openpyxl: MIT License, Copyright (c) 2010 openpyxl
+
+--------------------------------------------------------------------------------
+10. React, Lucide React & Tailwind CSS (Frontend)
+--------------------------------------------------------------------------------
+React: MIT License, Copyright (c) Meta Platforms, Inc.
+Lucide: ISC License, Copyright (c) Lucide Contributors
+Tailwind CSS: MIT License, Copyright (c) Tailwind Labs, Inc.
+
+--------------------------------------------------------------------------------
+11. Optional External Integrations (Not Bundled — User Acquired)
+--------------------------------------------------------------------------------
+- JADX: Apache License 2.0 (https://github.com/skylot/jadx)
+- Apktool: Apache License 2.0 (https://apktool.org)
+- MobSF: GNU General Public License v3.0 (https://github.com/MobSF/Mobile-Security-Framework-MobSF)
+- Wireshark / TShark: GNU General Public License v2.0 (https://www.wireshark.org)
+- Zeek: BSD 3-Clause License (https://zeek.org)
+- Suricata: GNU General Public License v2.0 (https://suricata.io)
+- CAPE Sandbox: GNU General Public License v3.0 (https://github.com/kevoreilly/CAPEv2)
+================================================================================

@@ -1,0 +1,172 @@
+import os
+import re
+import zipfile
+import hashlib
+import subprocess
+from pathlib import Path
+from typing import Tuple, Dict, Any, List
+
+APK_MAGIC_BYTES = b"PK\x03\x04"
+PE_DOS_MAGIC = b"MZ"
+
+def sanitize_filename(filename: str, default_ext: str = ".apk") -> str:
+    """Sanitize filename to prevent directory traversal and filesystem attacks."""
+    # Remove directory paths
+    base = os.path.basename(filename)
+    # Strip dangerous characters, allow alphanumerics, dots, dashes, underscores
+    sanitized = re.sub(r'[^a-zA-Z0-9._-]', '_', base)
+    if not sanitized or sanitized.startswith('.'):
+        sanitized = f"upload_{sanitized.lstrip('.')}"
+    
+    lower = sanitized.lower()
+    if lower.endswith('.apk') or lower.endswith('.exe'):
+        return sanitized
+    if default_ext.lower() in ['.apk', '.exe']:
+        return f"{sanitized}{default_ext.lower()}"
+    return f"{sanitized}.apk"
+
+def detect_file_type(file_path: Path) -> str:
+    """Detect file type ('apk', 'exe', or 'unknown') safely using magic header bytes."""
+    if not file_path.exists() or file_path.stat().st_size < 4:
+        return "unknown"
+    with open(file_path, "rb") as f:
+        header = f.read(4)
+        if header.startswith(APK_MAGIC_BYTES):
+            return "apk"
+        if header.startswith(PE_DOS_MAGIC):
+            return "exe"
+    # Fallback to extension if ambiguous
+    ext = file_path.suffix.lower()
+    if ext == ".apk":
+        return "apk"
+    if ext == ".exe":
+        return "exe"
+    return "unknown"
+
+def calculate_hashes(file_path: Path) -> Dict[str, str]:
+    """Calculate MD5, SHA-1, and SHA-256 for a file streaming in chunks."""
+    md5_hasher = hashlib.md5()
+    sha1_hasher = hashlib.sha1()
+    sha256_hasher = hashlib.sha256()
+    
+    with open(file_path, "rb") as f:
+        while chunk := f.read(65536):
+            md5_hasher.update(chunk)
+            sha1_hasher.update(chunk)
+            sha256_hasher.update(chunk)
+            
+    return {
+        "md5": md5_hasher.hexdigest(),
+        "sha1": sha1_hasher.hexdigest(),
+        "sha256": sha256_hasher.hexdigest()
+    }
+
+def validate_apk_file(file_path: Path, max_size_mb: int = 150) -> Tuple[bool, str]:
+    """
+    Validate that file exists, does not exceed size limit, has valid ZIP magic bytes,
+    and contains Android-specific structures (like AndroidManifest.xml or classes.dex).
+    """
+    if not file_path.exists():
+        return False, "File does not exist."
+        
+    size_bytes = file_path.stat().st_size
+    if size_bytes == 0:
+        return False, "File is empty (0 bytes)."
+        
+    if size_bytes > (max_size_mb * 1024 * 1024):
+        return False, f"File exceeds maximum permissible size of {max_size_mb} MB."
+        
+    with open(file_path, "rb") as f:
+        header = f.read(4)
+        if header != APK_MAGIC_BYTES:
+            return False, "Invalid file format: Missing standard ZIP/APK header magic bytes (PK\\x03\\x04)."
+            
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            namelist = zf.namelist()
+            # Check for zip bomb symptoms (excessive file count or decompression ratio)
+            total_uncompressed = sum(info.file_size for info in zf.infolist())
+            if total_uncompressed > (1024 * 1024 * 1024): # 1GB uncompressed limit
+                return False, "Suspicious archive: Uncompressed ratio exceeds safety limits (potential zip-bomb)."
+            
+            # An authentic APK typically has AndroidManifest.xml or classes.dex
+            has_manifest = any(name.endswith("AndroidManifest.xml") for name in namelist)
+            has_dex = any(name.endswith(".dex") for name in namelist)
+            if not has_manifest and not has_dex:
+                return False, "File is a ZIP archive but does not contain AndroidManifest.xml or DEX bytecode."
+    except zipfile.BadZipFile:
+        return False, "Corrupted archive: Archive structure could not be parsed."
+    except Exception as e:
+        return False, f"Validation failure: {str(e)}"
+        
+    return True, "Valid APK archive."
+
+def safe_extract_apk(apk_path: Path, extract_dir: Path) -> List[str]:
+    """
+    Safely extract files from APK with strict Zip-Slip and path traversal protection.
+    Returns list of safely extracted relative paths.
+    """
+    extract_dir = extract_dir.resolve()
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    extracted_files = []
+    
+    with zipfile.ZipFile(apk_path, "r") as zf:
+        for member in zf.infolist():
+            # Resolve target path
+            target_path = (extract_dir / member.filename).resolve()
+            
+            # Zip-Slip check: Ensure target_path is within extract_dir
+            try:
+                target_path.relative_to(extract_dir)
+            except ValueError:
+                # Path traversal attempt detected! Skip and log.
+                continue
+                
+            if member.is_dir():
+                target_path.mkdir(parents=True, exist_ok=True)
+            else:
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(member) as source, open(target_path, "wb") as target:
+                    # Write with size guard per file (max 100MB per individual extracted file)
+                    copied = 0
+                    while chunk := source.read(65536):
+                        copied += len(chunk)
+                        if copied > 100 * 1024 * 1024:
+                            break
+                        target.write(chunk)
+                extracted_files.append(str(target_path.relative_to(extract_dir)))
+                
+    return extracted_files
+
+def redact_secret(value: str) -> str:
+    """
+    Redact sensitive secret string according to forensic guidelines.
+    Example: 'AIzaSyA1234567890abcdef' -> 'AIza••••••••cdef'
+    """
+    if not value or len(value) <= 8:
+        return "••••••••"
+    if len(value) <= 12:
+        return f"{value[:2]}••••••••{value[-2:]}"
+    return f"{value[:4]}••••••••{value[-4:]}"
+
+def safe_run_command(cmd_args: List[str], cwd: Path = None, timeout: int = 60) -> Tuple[int, str, str]:
+    """
+    Safely execute external subprocess using argument list (no shell=True).
+    Strict timeout and output capture.
+    """
+    try:
+        result = subprocess.run(
+            cmd_args,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            shell=False # Strictly avoid shell injection
+        )
+        return result.returncode, result.stdout, result.stderr
+    except subprocess.TimeoutExpired:
+        return -1, "", f"Execution timed out after {timeout} seconds."
+    except FileNotFoundError:
+        return -2, "", f"Executable '{cmd_args[0]}' was not found on system PATH."
+    except Exception as e:
+        return -3, "", f"Execution error: {str(e)}"

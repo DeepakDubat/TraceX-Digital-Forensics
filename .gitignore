@@ -1,0 +1,107 @@
+# ==============================================================================
+# TRACEX – DIGITAL FORENSICS & CYBER INVESTIGATION SUITE (.gitignore)
+# Strict exclusion rules for secure source-code repository publication
+# ==============================================================================
+
+# --- Secrets, Credentials & Local Environment Files ---
+.env
+.env.local
+.env.*.local
+*.env
+!/.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+*.crt
+*.cer
+credentials.json
+token.json
+auth.json
+client_secret*.json
+mobsf_web_credentials.txt
+
+# --- Windows Installers, Portable ZIPs & Binary Releases (STRICTLY EXCLUDED) ---
+dist/
+build/
+release/
+*.exe
+*.msi
+*.zip
+*.tar.gz
+*.7z
+TraceX-Setup.exe
+TraceX-Portable.zip
+installer/installer_assets/tools/
+installer/installer_assets/runtimes/
+
+# --- Forensic Evidence Workspaces & Databases ---
+analysis_workspace/
+reports/
+!docs/screenshots/
+*.db
+*.db-wal
+*.db-shm
+*.db.bak
+*.sqlite3
+*.sqlite3-wal
+UserData/
+captures/
+
+# --- Python Runtimes & Bytecode ---
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+env/
+venv/
+.venv/
+develop-eggs/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+
+# --- Frontend Node & Build Artifacts ---
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+.npm
+
+# --- Logs, Diagnostics & Crash Traces ---
+*.log
+backend_crash.log
+*.tmp
+temp_*/
+
+# --- Internal Workstation Artifacts & Local Audit Reports ---
+scratch/
+_pre_rollback_backup/
+archive_legacy_snapshots/
+TraceX_Presentation/
+PROJECT_*/
+TRACEX_*.md
+FINAL_*.md
+BROWSER_RUNTIME_VERIFICATION.md
+SBOM.md
+release_verification_results.json
+scratch_prompt.txt
+
+# --- IDE & Operating System Artifacts ---
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+Thumbs.db
+Desktop.ini
+.DS_Store
