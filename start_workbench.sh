@@ -1,28 +1,45 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# APK FORENSICS & THREAT INTELLIGENCE WORKBENCH
-# Linux & Kali Linux Launcher
+# TRACEX - DIGITAL FORENSICS & CYBER INVESTIGATION SUITE
+# Linux & Kali Linux Developer Workbench Launcher
 # ==============================================================================
 set -e
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT_DIR"
+
 echo "=============================================================================="
-echo "          APK FORENSICS & THREAT INTELLIGENCE WORKBENCH"
+echo "       TRACEX - DIGITAL FORENSICS & CYBER INVESTIGATION SUITE"
+echo "                     Developer Workbench Launcher"
 echo "=============================================================================="
 
-# Check Python environment
-if ! command -v python3 &> /dev/null; then
-    echo "[-] Python3 is not installed. Please install python3 and pip."
+# Ensure .env exists
+if [ ! -f ".env" ] && [ -f ".env.example" ]; then
+    cp .env.example .env
+fi
+
+# Locate Python
+PYTHON_BIN=""
+for cmd in python3.11 python3 python; do
+    if command -v "$cmd" &>/dev/null; then
+        PYTHON_BIN="$cmd"
+        break
+    fi
+done
+
+if [ -z "$PYTHON_BIN" ]; then
+    echo "[-] Python is not installed. Please run ./install.sh first."
     exit 1
 fi
 
 # Start Backend in background
 echo "[*] Starting FastAPI Backend on http://127.0.0.1:8000 ..."
-python3 run_backend.py &
+"$PYTHON_BIN" run_backend.py &
 BACKEND_PID=$!
 
 # Start Reverse Proxy
 echo "[*] Starting Reverse Proxy on http://127.0.0.1:9000 ..."
-python3 run_proxy.py &
+"$PYTHON_BIN" run_proxy.py &
 PROXY_PID=$!
 
 # Start Frontend
@@ -30,8 +47,9 @@ echo "[*] Starting Vite Frontend on http://localhost:5173 ..."
 cd frontend
 npm run dev &
 FRONTEND_PID=$!
+cd "$ROOT_DIR"
 
-echo "[+] Workbench active!"
+echo "[+] TraceX Workbench active!"
 echo "    UI (Dev Server) : http://localhost:5173"
 echo "    Backend API     : http://127.0.0.1:8000"
 echo "    Web Preview URL : http://127.0.0.1:9000/http://127.0.0.1:8000/"

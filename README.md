@@ -156,42 +156,64 @@ TraceX operates as a local-first desktop application bound exclusively to loopba
 
 ---
 
-## Installation & Development Setup
+## Installation & Quick Start
+
+TraceX supports **1-Click Automated Setup** for instant deployment, as well as granular manual setup for developers.
 
 ### 1. Prerequisites
-* **Operating System:** Windows 10/11 x64
-* **Python:** 3.11 x64 (`python --version` or `py -3.11 --version`)
+* **Operating System:** Windows 10/11 x64 (Linux / Kali Linux / macOS also supported)
+* **Python:** 3.10 or 3.11 x64 (`python --version` or `py -3.11 --version`)
 * **Node.js:** v18+ or v20+ with `npm` (`node -v`)
 * **Java:** OpenJDK 17 or 21 (for running JADX and Apktool)
 
-### 2. Quick Setup
+---
 
+### Option A: 1-Click Automated Setup & Launch (Recommended)
+
+After cloning the repository:
 ```powershell
-# 1. Clone repository
 git clone https://github.com/DeepakDubat/TraceX-Digital-Forensics.git
 cd TraceX-Digital-Forensics
+```
 
-# 2. Configure environment template
+1. **Install Everything (Run Once):**
+   * **Windows:** Double-click `install.bat` (or run `.\install.bat` in terminal).
+   * **Linux/macOS:** Run `./install.sh` in terminal.
+   * *This automatically configures Python dependencies, initializes `.env`, installs npm packages, and builds the frontend bundle.*
+
+2. **Launch TraceX Anytime:**
+   * **Windows:** Double-click `run_tracex.bat` (or `start.bat`).
+   * **Linux/macOS:** Run `./run_tracex.sh` (or `./start.sh`).
+   * *TraceX starts immediately and automatically opens your browser at `http://127.0.0.1:8000`!*
+
+---
+
+### Option B: Developer Workbench Mode (Hot Reload)
+
+For developers actively modifying backend Python or frontend React components:
+
+```powershell
+# 1. Initialize environment
 copy .env.example .env
 
-# 3. Install backend dependencies
+# 2. Install backend dependencies
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-py -3.11 -m pip install -r backend/requirements.txt
+py -3.11 -m pip install -r requirements.txt
 
-# 4. Install frontend dependencies
+# 3. Install frontend dependencies
 cd frontend
 npm.cmd install
 cd ..
 
-# 5. Launch development workstation
-.\start_workbench.ps1
+# 4. Launch multi-window development workbench
+.\start_workbench.ps1   # (or double-click start_workbench.bat)
 ```
-* **Frontend UI:** `http://127.0.0.1:5173`
+* **Frontend UI (Vite Dev Server):** `http://127.0.0.1:5173`
 * **FastAPI Backend:** `http://127.0.0.1:8000`
 * **Interactive API Documentation:** `http://127.0.0.1:8000/docs`
 
-*For complete setup instructions, see [docs/INSTALLATION.md](docs/INSTALLATION.md).*
+*For complete setup details and advanced configurations, see [docs/INSTALLATION.md](docs/INSTALLATION.md).*
 
 ---
 

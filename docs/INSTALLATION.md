@@ -1,22 +1,48 @@
 # TraceX Development & Installation Guide
 
-This guide details the prerequisites, environment setup, and development procedures for running and testing TraceX from source on Windows.
+This guide details the prerequisites, automated setup, and development procedures for running and testing TraceX from source on Windows, Linux, and macOS.
 
 ---
 
-## 1. Prerequisites
+## 1. Quick Start: 1-Click Automated Setup (Recommended)
+
+TraceX includes fully automated installation and launch scripts that configure the complete environment in two simple steps:
+
+### Step 1: Automated Installation (Run Once)
+Clone the repository and run the automated installer:
+* **Windows:** Double-click `install.bat` (or execute `.\install.bat` in PowerShell / Command Prompt).
+* **Linux / macOS:** Run `./install.sh` in terminal.
+
+The installer automatically:
+1. Detects Python 3.10+ / 3.11 and sets up a virtual environment.
+2. Installs all required backend Python dependencies from `requirements.txt`.
+3. Installs frontend npm packages and compiles the high-performance production bundle (`frontend/dist`).
+4. Generates the default `.env` configuration file from `.env.example`.
+
+### Step 2: Instant Application Launch
+* **Windows:** Double-click `run_tracex.bat` (or `start.bat`).
+* **Linux / macOS:** Run `./run_tracex.sh` (or `./start.sh`).
+
+TraceX will initialize the FastAPI backend engine and automatically open your default browser directly to:
+```
+http://127.0.0.1:8000
+```
+
+---
+
+## 2. Prerequisites (For Manual / Custom Setup)
 
 Ensure the following tools are installed on your workstation:
 
-* **Operating System:** Windows 10/11 x64
-* **Python:** Python 3.11 x64 (`python --version` or `py -3.11 --version`)
+* **Operating System:** Windows 10/11 x64 (Linux / Kali Linux / macOS also supported)
+* **Python:** Python 3.10 or 3.11 x64 (`python --version` or `py -3.11 --version`)
 * **Node.js:** Node.js v18+ or v20+ with `npm` (`node -v`, `npm -v`)
 * **Java Runtime:** OpenJDK 17 or 21 (required for running JADX and Apktool)
 * **Git:** Version control (`git --version`)
 
 ---
 
-## 2. Repository Clone & Environment Setup
+## 3. Manual Repository Clone & Environment Setup
 
 ```powershell
 # Clone the repository
@@ -29,7 +55,7 @@ copy .env.example .env
 
 ---
 
-## 3. Backend Setup (FastAPI & Python 3.11)
+## 4. Manual Backend Setup (FastAPI & Python)
 
 ```powershell
 # Create a Python virtual environment (optional but recommended)
@@ -38,12 +64,12 @@ py -3.11 -m venv .venv
 
 # Install backend dependencies
 py -3.11 -m pip install --upgrade pip
-py -3.11 -m pip install -r backend/requirements.txt
+py -3.11 -m pip install -r requirements.txt
 ```
 
 ---
 
-## 4. Frontend Setup (React 19 & Vite)
+## 5. Manual Frontend Setup (React 19 & Vite)
 
 ```powershell
 # Navigate to the frontend directory
@@ -52,15 +78,16 @@ cd frontend
 # Install Node dependencies
 npm.cmd install
 
+# Compile production bundle
+npm.cmd run build
+
 # Return to project root
 cd ..
 ```
 
 ---
 
-## 5. Running the Development Workstation
-
-You can start the frontend and backend servers together or independently:
+## 6. Running the Development Workstation (Hot Reload Mode)
 
 ### Option A: Complete Development Server
 ```powershell
